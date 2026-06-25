@@ -11,17 +11,31 @@ const wss = new WebSocket.Server({ server });
 
 wss.on('connection', (ws) => {
   console.log('Client connected');
+  let ircReady = false;
+  let buffer = [];
 
   const irc = net.connect(80, 'irc-1x04.vaughnsoft.net', () => {
     console.log('Connected to Vaughn IRC server');
+    ircReady = true;
+    // flush buffered commands
+    buffer.forEach(cmd => {
+      console.log('TO IRC (flushed):', cmd.trim());
+      irc.write(cmd);
+    });
+    buffer = [];
   });
 
   irc.setEncoding('utf8');
 
   ws.on('message', (data) => {
     const str = data.toString();
-    console.log('TO IRC:', str.trim());
-    irc.write(str);
+    if (ircReady) {
+      console.log('TO IRC:', str.trim());
+      irc.write(str);
+    } else {
+      console.log('BUFFERED:', str.trim());
+      buffer.push(str);
+    }
   });
 
   irc.on('data', (data) => {
