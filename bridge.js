@@ -11,41 +11,40 @@ const wss = new WebSocket.Server({ server });
 
 wss.on('connection', (ws) => {
   console.log('Client connected');
-  let ircReady = false;
-  let buffer = [];
 
   const irc = net.connect(80, 'irc-1x04.vaughnsoft.net', () => {
     console.log('Connected to Vaughn IRC server');
-    ircReady = true;
-    // flush buffered commands
-    buffer.forEach(cmd => {
-      console.log('TO IRC (flushed):', cmd.trim());
-      irc.write(cmd);
-    });
-    buffer = [];
+    irc.setKeepAlive(true, 10000);
   });
 
   irc.setEncoding('utf8');
+  let lineBuffer = '';
 
   ws.on('message', (data) => {
     const str = data.toString();
-    if (ircReady) {
-      console.log('TO IRC:', str.trim());
-      irc.write(str);
-    } else {
-      console.log('BUFFERED:', str.trim());
-      buffer.push(str);
-    }
+    console.log('TO IRC:', str.trim());
+    irc.write(str);
   });
 
   irc.on('data', (data) => {
-    console.log('FROM IRC:', data.trim());
-    if (ws.readyState === 1) ws.send(data);
+    console.log('RAW FROM IRC:', JSON.stringify(data));
+    lineBuffer += data;
+    const lines = lineBuffer.split('\r\n');
+    lineBuffer = lines.pop();
+    lines.forEach(line => {
+      if (line) {
+        console.log('FROM IRC:', line);
+        if (ws.readyState === 1) ws.send(line + '\r\n');
+      }
+    });
   });
+
+  irc.on('connect', () => console.log('TCP connect fired'));
+  irc.on('ready', () => console.log('TCP ready fired'));
 
   ws.on('close', () => { console.log('WS closed'); irc.destroy(); });
   ws.on('error', (e) => { console.error('WS error:', e.message); irc.destroy(); });
-  irc.on('close', () => { console.log('IRC closed'); ws.close(); });
+  irc.on('close', (hadError) => { console.log('IRC closed, hadError:', hadError); ws.close(); });
   irc.on('error', (e) => { console.error('IRC error:', e.message); ws.close(); });
 });
 
